@@ -16,7 +16,7 @@ Copy-Item .env.example .env
 
 1. Enter each study date and attach de-identified written material or an annotated MRI figure. Written material can be a text-based PDF or UTF-8 TXT file. For scanned PDFs, verify the OCR text before uploading it as TXT.
 2. Review the seven questions from `AnalyzeDecision.py`. Four require the upper-row Panel B figure referenced by their prompts. The three diagnosis-status questions use the written material. Remove questions, add custom written-report questions with answer choices, or restore the original bank.
-3. Run JEV to view answers and image annotations for the latest study. The app selects the newest study date and asks you to choose the latest study if dates tie. Only the latest study's image is used. Review the results before generating the OpenAI draft.
+3. Run JEV to view answers and image annotations for the latest study. The app selects the newest study date and asks you to choose the latest study if dates tie. When an image question is active and the latest MRI image is available, JEV receives earlier MRI images as dated comparison references. Results and image annotations refer to the latest study. Review the results before generating the OpenAI draft.
 
 TypeSafe receives the applicable source material and questions. OpenAI receives question labels, dated results, source types and study IDs. Use approved de-identified material and keep the local server private. Review image annotations and the summary against the source material with the care team.
 

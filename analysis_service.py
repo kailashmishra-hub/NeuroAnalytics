@@ -3,6 +3,7 @@ import json
 import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from openai import OpenAI
 
@@ -12,9 +13,16 @@ class JEVError(Exception):
 
 
 def ask_jev(latest_report, prior_reports, questions, image=None):
+    state = {
+        "latest_study": latest_report,
+        "prior_studies": [
+            {key: value for key, value in study.items() if key != "image"}
+            for study in prior_reports
+        ],
+    }
     payload = {
         "model": os.getenv("TYPESAFE_MODEL", "jev-1.14.0"),
-        "state": {"latest_study": latest_report, "prior_reports": prior_reports},
+        "state": state,
         "questions": questions,
     }
     headers = {
@@ -23,16 +31,26 @@ def ask_jev(latest_report, prior_reports, questions, image=None):
     }
     if prior_reports:
         headers["TypeSafe-Danger-Zone-Long-Context"] = "true"
-    if image:
-        image_format, data = image
-        payload["state"]["document_image"] = "study-image"
-        payload["assets"] = {
-            "study-image": {
-                "type": "image",
-                "format": image_format,
-                "data_base64": base64.b64encode(data).decode("ascii"),
-            }
+    assets = {}
+
+    def attach_image(target, field, study_image):
+        image_format, data = study_image
+        placeholder = f"mri-image-{uuid4().hex}"
+        target[field] = placeholder
+        assets[placeholder] = {
+            "type": "image",
+            "format": image_format,
+            "data_base64": base64.b64encode(data).decode("ascii"),
         }
+
+    # Supply the latest image first so its role is clear for localization.
+    if image:
+        attach_image(state, "document_image", image)
+        for reference, study in zip(state["prior_studies"], prior_reports):
+            if study.get("image"):
+                attach_image(reference, "reference_image", study["image"])
+    if assets:
+        payload["assets"] = assets
         headers["TypeSafe-Danger-Zone-Images"] = "true"
     request = Request(
         "https://api.typesafe.ai/v1/systemone",

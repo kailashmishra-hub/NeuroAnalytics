@@ -64,7 +64,7 @@ def request_questions(bank, report_text, image):
         if not item["image"]:
             definition["instructions"] += (
                 " Answer about the latest_study in state using its written material. "
-                "Read prior_reports for context and documented comparisons. Use historical information "
+                "Read the written text in prior_studies for context and documented comparisons. Use historical information "
                 "only when relevant to interpreting the latest study. A statement in an earlier report "
                 "does not establish that it is documented in the latest report. If the latest study "
                 "does not support an answer, choose the insufficient information option. "
@@ -72,8 +72,12 @@ def request_questions(bank, report_text, image):
             )
         else:
             definition["instructions"] += (
-                " The document_image is from the latest study. Localize only on that image. "
-                "Do not transfer findings or coordinates from earlier studies."
+                " Review the dated reference_image assets in prior_studies and compare comparable "
+                "anatomy and sequences with document_image, the latest image. Use the prior images "
+                "to interpret what is visible in the latest image. Base answers and any box "
+                "coordinates on document_image. Do not transfer findings or coordinates from "
+                "an earlier image. If differences in views or quality prevent a reliable comparison, "
+                "do not infer interval change."
             )
         applicable[key] = definition
     return applicable
@@ -102,7 +106,7 @@ st.caption("Use de-identified material approved for external processing. Review 
 left, right = st.columns([1, 1], gap="large")
 with left:
     st.header("Studies")
-    st.info("Enter the MRI study date for each report. The newest date determines which study JEV evaluates. The other written reports are used as references. You can upload them in any order.")
+    st.info("Enter the MRI study date for each report. The newest date determines which study JEV evaluates. Earlier reports and images provide comparison context. You can upload them in any order.")
     count = st.number_input("Number of studies", min_value=1, max_value=20, value=1)
     studies = []
     report_names = {}
@@ -112,7 +116,7 @@ with left:
         with st.expander(f"Study {index + 1} · {identifier}", expanded=index == 0):
             study_date = st.date_input("Study date", value=None, max_value=date.today(), key=f"date_{index}")
             file = st.file_uploader("Written MRI report or clinical notes", type=["pdf", "txt"], key=f"report_{index}")
-            panel = st.file_uploader("Annotated MRI figure with upper-row Panel B (used for latest study only)", type=["png", "jpg", "jpeg"], key=f"image_{index}")
+            panel = st.file_uploader("MRI image (upper-row Panel B required for latest-study image questions)", type=["png", "jpg", "jpeg"], key=f"image_{index}")
             report_text = ""
             image = None
             try:
@@ -189,28 +193,36 @@ if complete:
 
 applicable = {}
 prior_reports = []
+use_images = False
 image = None
 if latest:
     study_date, identifier, report, image = latest
     latest_report = {"study": identifier, "date": study_date, "text": report}
-    prior_reports = [
-        {"study": prior_id, "date": prior_date, "text": prior_text}
-        for prior_date, prior_id, prior_text, _ in studies
-        if prior_id != identifier and prior_text
-    ]
     applicable = request_questions(bank, report, image)
+    use_images = bool(image and IMAGE_KEYS.intersection(applicable))
+    prior_reports = [
+        {"study": prior_id, "date": prior_date, "text": prior_text, "image": prior_image}
+        for prior_date, prior_id, prior_text, prior_image in studies
+        if prior_id != identifier and (prior_text or (use_images and prior_image))
+    ]
     st.subheader("Studies JEV will use")
     st.table([
         {"Study": study_id, "Study date": day, "File": report_names[study_id], "Role": role}
         for day, study_id, role in [
             (study_date, identifier, "Latest study · evaluate"),
             *[
-                (day, study_id, "Reference · written report" if text else "Image only · excluded")
-                for day, study_id, text, _ in studies
-                if study_id != identifier
+                (study["date"], study["study"], "Reference · " + " and ".join(
+                    source for source, included in (
+                        ("written report", bool(study["text"])),
+                        ("MRI image", bool(use_images and study["image"])),
+                    ) if included
+                ))
+                for study in prior_reports
             ],
         ]
     ])
+    if not use_images and any(prior_image for _, prior_id, _, prior_image in studies if prior_id != identifier):
+        st.caption("To compare earlier images, attach the latest MRI image and keep an image question active.")
 
 signature = (
     latest[1] if latest else None,
@@ -226,7 +238,7 @@ if not ready or st.session_state.get("signature") != signature:
     for key in ("signature", "answers", "summary"):
         st.session_state.pop(key, None)
 
-send_to_jev = st.checkbox("Send dated report texts and any applicable latest-study image to TypeSafe AI")
+send_to_jev = st.checkbox("Send dated reports and applicable latest and reference MRI images to TypeSafe AI")
 if not os.getenv("TYPESAFE_API_KEY"):
     st.caption("Set TYPESAFE_API_KEY in the local .env file to enable analysis.")
 if not ready:
@@ -234,7 +246,7 @@ if not ready:
 if st.button("Run JEV analysis", type="primary", disabled=not (ready and send_to_jev and os.getenv("TYPESAFE_API_KEY"))):
     with st.spinner("Reading the reports and reviewing the latest study…"):
         try:
-            image_for_request = image if IMAGE_KEYS.intersection(applicable) else None
+            image_for_request = image if use_images else None
             answers = ask_jev(latest_report, prior_reports, applicable, image_for_request)
         except JEVError as error:
             st.error(str(error))
