@@ -1,0 +1,60 @@
+{
+  "affected_region_B": {
+    "type": "choice",
+    "instructions": "Examine only the upper-row MRI panel labelled B in `document_image`. Which anatomical region contains the areas indicated by the white arrows? Select Unable to determine if localization is uncertain. Do not diagnose cerebral palsy or infer clinical severity.",
+    "criteria": {
+      "Periventricular white matter": "White matter surrounding the lateral ventricles.",
+      "Cerebral cortex": "The outer cortical layer of the cerebral hemispheres.",
+      "Basal ganglia or thalamus": "Deep gray-matter structures.",
+      "Cerebellum": "The cerebellar region.",
+      "Unable to determine": "The anatomical region cannot be identified reliably."
+    }
+  },
+  "marked_region_B": {
+    "type": "box",
+    "instructions": "In the upper-row panel labelled B in `document_image`, locate the tissue region immediately around the tip of the white arrow on the image-left side. Return a tight rectangle around that single region, excluding the other panels and the arrow shaft."
+  },
+  "hie_related_pattern": {
+    "type": "choice",
+    "instructions": "For educational review, assess only upper-row panel B in `document_image`. Are the visible findings suggestive of chronic hypoxic-ischaemic injury? Consider alternative explanations and image limitations. Do not establish the cause or timing of injury from this image alone. Annotations are not proof of a diagnosis.",
+    "criteria": {
+      "Potentially suggestive": "Visible findings may be compatible with chronic hypoxic-ischaemic injury, but require specialist confirmation.",
+      "No clear supporting features": "No clear supporting features are visible in this panel; this does not exclude previous injury.",
+      "Indeterminate": "The findings are nonspecific or the image and clinical information are insufficient."
+    }
+  },
+  "hie_sequelae_location": {
+    "type": "box",
+    "instructions": "For educational review, examine upper-row panel B in `document_image`. Locate the single most clearly visible region that may represent chronic hypoxic-ischaemic injury sequelae. Return a tight rectangle around that region, excluding other panels, labels and annotation arrows. Do not assume the cause of an abnormality is HIE solely because it is highlighted."
+  },
+  "cerebral_palsy_status": {
+    "type": "choice",
+    "instructions": "What do the supplied clinical notes establish about cerebral palsy? Do not diagnose from the MRI alone.",
+    "criteria": {
+      "Confirmed diagnosis": "Clinical notes explicitly document a clinician-confirmed CP diagnosis.",
+      "Suspected or under assessment": "Clinical notes explicitly describe suspected CP or ongoing assessment.",
+      "Explicitly ruled out": "Clinical notes explicitly state that CP was ruled out.",
+      "Insufficient information": "No clear clinical conclusion is supplied, records conflict, or only imaging is provided."
+    }
+  },
+  "adhd_status": {
+    "type": "choice",
+    "instructions": "What do the supplied clinical notes establish about ADHD? Do not infer ADHD from MRI appearance or a CP diagnosis.",
+    "criteria": {
+      "Confirmed diagnosis": "Clinical notes explicitly document a specialist-confirmed ADHD diagnosis.",
+      "Suspected or under assessment": "Clinical notes explicitly describe suspected ADHD or ongoing assessment.",
+      "Explicitly ruled out": "Clinical notes explicitly state that ADHD was ruled out.",
+      "Insufficient information": "No clear clinical conclusion is supplied, records conflict, or only imaging is provided."
+    }
+  },
+  "autism_status": {
+    "type": "choice",
+    "instructions": "What do the supplied clinical notes establish about autism? Do not infer autism from MRI appearance or a CP diagnosis.",
+    "criteria": {
+      "Confirmed diagnosis": "Clinical notes explicitly document a clinician-confirmed autism diagnosis.",
+      "Suspected or under assessment": "Clinical notes explicitly describe suspected autism or ongoing assessment.",
+      "Explicitly ruled out": "Clinical notes explicitly state that autism was ruled out.",
+      "Insufficient information": "No clear clinical conclusion is supplied, records conflict, or only imaging is provided."
+    }
+  }
+}
