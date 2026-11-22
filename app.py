@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import os
@@ -12,7 +13,7 @@ from openai import OpenAIError
 from PIL import Image, ImageDraw
 from pypdf import PdfReader
 
-from analysis_service import JEVError, ask_jev, summarize
+from analysis_service import JEVError, ask_jev, normalize_mri_image, summarize
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
@@ -87,26 +88,43 @@ if "bank" not in st.session_state:
     reset_questions()
 bank = st.session_state.bank
 
+brain_map = base64.b64encode((ROOT / "assets" / "brain-map.png").read_bytes()).decode("ascii")
 st.markdown("""
 <style>
 .block-container {max-width: 1180px; padding-top: 2.3rem; padding-bottom: 3rem;}
-.clinical-header {background: #113650; color: #fff; border-radius: 14px;
-  padding: 1.65rem 2rem; margin-bottom: 1.1rem; border-bottom: 4px solid #37b9b0;}
-.clinical-header p {color:#c8e6ed; margin:0; font-size:.92rem;}
-.clinical-header h1 {color:#fff; padding:.15rem 0 .35rem; margin:0; font-size:2.15rem;}
+.clinical-header {display:flex; align-items:center; justify-content:space-between; gap:1rem;
+  background:linear-gradient(110deg,#113650,#14586b); color:#fff; border-radius:14px;
+  padding:1.4rem 2rem; margin-bottom:1rem; border-bottom:4px solid #37b9b0;}
+.clinical-header p {color:#cee9ee; margin:0; font-size:.95rem;}
+.clinical-header h1 {color:#fff; padding:.35rem 0; margin:0; font-size:2.25rem;}
+.clinical-header .medical-symbol {color:#89e4d6; margin-right:.4rem;}
+.clinical-header figure {margin:0; width:min(36%,300px); text-align:center;}
+.clinical-header img {display:block; width:100%; height:auto;}
+.clinical-header figcaption {color:#d0edf0; font-size:.72rem;}
+@media(max-width:600px) {
+  .clinical-header {padding:1rem; gap:.5rem;}
+  .clinical-header h1 {font-size:1.65rem;}
+  .clinical-header figure {width:30%;}
+}
 </style>
 <div class="clinical-header">
-  <p>Pediatric Radiology</p>
-  <h1>NeuroAnalytics</h1>
-  <p>Longitudinal MRI review</p>
+  <div>
+    <p><span class="medical-symbol" aria-hidden="true">✚</span>Pediatric Radiology</p>
+    <h1>NeuroAnalytics</h1>
+    <p>Longitudinal brain MRI review</p>
+  </div>
+  <figure>
+    <img src="data:image/png;base64,__BRAIN_MAP__" alt="Schematic axial brain map with highlighted points">
+    <figcaption>Axial brain anatomy schematic</figcaption>
+  </figure>
 </div>
-""", unsafe_allow_html=True)
+""".replace("__BRAIN_MAP__", brain_map), unsafe_allow_html=True)
 st.caption("Use de-identified material approved for external processing. Review generated findings and summaries with the care team.")
 
 left, right = st.columns([1, 1], gap="large")
 with left:
     st.header("Studies")
-    st.info("Enter the MRI study date for each report. The newest date determines which study JEV evaluates. Earlier reports and images provide comparison context. You can upload them in any order.")
+    st.info("Enter the MRI study date for each report. The newest date determines the primary study for review. Earlier reports and images provide comparison context. You can upload them in any order.")
     count = st.number_input("Number of studies", min_value=1, max_value=20, value=1)
     studies = []
     report_names = {}
@@ -124,10 +142,7 @@ with left:
                 if file and not report_text:
                     raise ValueError("Empty report")
                 if panel:
-                    with Image.open(BytesIO(panel.getvalue())) as picture:
-                        picture.verify()
-                        image_format = {"PNG": "png", "JPEG": "jpeg"}[picture.format]
-                    image = (image_format, panel.getvalue())
+                    image = normalize_mri_image(panel.getvalue())
             except Exception:
                 valid_studies = False
                 st.error("Check the uploaded file. Scanned reports need verified OCR text in a TXT file.")
@@ -205,7 +220,7 @@ if latest:
         for prior_date, prior_id, prior_text, prior_image in studies
         if prior_id != identifier and (prior_text or (use_images and prior_image))
     ]
-    st.subheader("Studies JEV will use")
+    st.subheader("Studies included in review")
     st.table([
         {"Study": study_id, "Study date": day, "File": report_names[study_id], "Role": role}
         for day, study_id, role in [
@@ -238,12 +253,12 @@ if not ready or st.session_state.get("signature") != signature:
     for key in ("signature", "answers", "summary"):
         st.session_state.pop(key, None)
 
-send_to_jev = st.checkbox("Send dated reports and applicable latest and reference MRI images to TypeSafe AI")
+send_to_jev = st.checkbox("I authorize external processing of the selected reports and MRI images for AI-assisted radiology review")
 if not os.getenv("TYPESAFE_API_KEY"):
-    st.caption("Set TYPESAFE_API_KEY in the local .env file to enable analysis.")
+    st.caption("AI-assisted radiology review is unavailable. Contact your application administrator to enable it.")
 if not ready:
     st.caption("Enter a date and attach source material for each study. Keep at least one question that matches the latest study.")
-if st.button("Run JEV analysis", type="primary", disabled=not (ready and send_to_jev and os.getenv("TYPESAFE_API_KEY"))):
+if st.button("Run AI-assisted review", type="primary", disabled=not (ready and send_to_jev and os.getenv("TYPESAFE_API_KEY"))):
     with st.spinner("Reading the reports and reviewing the latest study…"):
         try:
             image_for_request = image if use_images else None
@@ -269,7 +284,7 @@ if st.session_state.get("signature") == signature:
             shown = answer
         rows.append({
             "Study": identifier, "Date": study_date, "Question": item["label"],
-            "Source": "Panel B image" if item["image"] else "Written material", "JEV answer": shown,
+            "Source": "Panel B image" if item["image"] else "Written material", "AI assessment": shown,
         })
 
     st.dataframe(rows, hide_index=True)
@@ -278,7 +293,7 @@ if st.session_state.get("signature") == signature:
         if bank[key]["definition"]["type"] == "box" and answer
     ]
     if image and boxes:
-        with st.expander(f"{identifier} · JEV image annotations"):
+        with st.expander(f"{identifier} · AI image annotations"):
             for label, box in boxes:
                 with Image.open(BytesIO(image[1])) as source:
                     picture = source.convert("RGB")
@@ -291,7 +306,7 @@ if st.session_state.get("signature") == signature:
                 st.image(picture, caption=label)
 
     st.subheader("Clinical review draft")
-    send_to_openai = st.checkbox("Send the dated JEV results and question labels to OpenAI")
+    send_to_openai = st.checkbox("Send dated AI assessments and review questions to OpenAI")
     if not os.getenv("OPENAI_API_KEY"):
         st.caption("Set OPENAI_API_KEY in the local .env file to enable the draft.")
     if st.button("Generate summary", disabled=not (
@@ -306,3 +321,10 @@ if st.session_state.get("signature") == signature:
     if summary := st.session_state.get("summary"):
         st.text(summary)
         st.download_button("Download draft", summary, "mri-review-draft.txt", "text/plain")
+
+st.divider()
+st.caption(f"© {date.today().year} NeuroAnalytics")
+st.caption(
+    "AI-assisted findings and annotations are for clinical review. "
+    "Consult a doctor or radiologist for further investigation and diagnosis."
+)

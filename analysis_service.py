@@ -1,15 +1,28 @@
 import base64
 import json
 import os
+from io import BytesIO
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from openai import OpenAI
+from PIL import Image
 
 
 class JEVError(Exception):
     pass
+
+
+def normalize_mri_image(data):
+    with Image.open(BytesIO(data)) as source:
+        if source.format not in {"PNG", "JPEG"}:
+            raise ValueError("Expected a PNG or JPEG MRI image")
+        rgb = source.convert("RGB")
+        rgb.info.clear()
+        with BytesIO() as buffer:
+            rgb.save(buffer, format="PNG")
+            return "png", buffer.getvalue()
 
 
 def ask_jev(latest_report, prior_reports, questions, image=None):
@@ -77,7 +90,7 @@ def ask_jev(latest_report, prior_reports, questions, image=None):
                         raise ValueError("Unexpected box")
                 answers[key] = box
     except HTTPError as error:
-        message = f"TypeSafe returned HTTP {error.code}."
+        message = f"The radiology review service returned HTTP {error.code}."
         with error:
             if error.code in (400, 413, 422):
                 # Provider errors can echo report text, so show fixed guidance only.
@@ -85,22 +98,29 @@ def ask_jev(latest_report, prior_reports, questions, image=None):
                 if "model" in detail and any(
                     term in detail for term in ("vision", "box", "image", "multimodal")
                 ):
-                    message += " Check that TYPESAFE_MODEL supports image and box questions for your account."
+                    message += " Ask your administrator to enable image review and localization."
                 elif "model" in detail:
-                    message += " Check TYPESAFE_MODEL against the models available to your TypeSafe account."
+                    message += " Ask your administrator to check the review service configuration."
                 elif error.code == 413 or any(
                     term in detail for term in ("context", "token limit", "too long", "too large")
                 ):
-                    message += " TypeSafe may have reached a request size limit. Test with a shorter de-identified report set."
+                    message += " The review service may have reached a request size limit. Test with a shorter de-identified report set."
                 elif "image" in detail or "asset" in detail:
-                    message += " Check that the latest study image is a valid PNG or JPEG."
+                    message += f" The request included {len(assets)} image assets."
+                    if len(assets) > 1:
+                        message += (
+                            " Test the latest image alone, then add the reference images one at a time. "
+                            "This helps isolate a rejected reference or a multi-image request limit."
+                        )
+                    else:
+                        message += " Try a fresh PNG or JPEG export and check that the selected model supports images."
                 else:
                     message += " Test with one de-identified report and a written question to isolate the rejected input."
         raise JEVError(message) from None
     except (TimeoutError, URLError):
-        raise JEVError("Could not reach TypeSafe or the request timed out.") from None
+        raise JEVError("Could not reach the radiology review service or the request timed out.") from None
     except (ValueError, KeyError, TypeError, AttributeError):
-        raise JEVError("TypeSafe returned an unexpected answer.") from None
+        raise JEVError("The radiology review service returned an unexpected result.") from None
     return answers
 
 
