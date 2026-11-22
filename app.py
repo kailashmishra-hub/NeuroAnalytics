@@ -212,6 +212,26 @@ use_images = False
 image = None
 if latest:
     study_date, identifier, report, image = latest
+    notes_file = st.file_uploader(
+        f"Clinical notes for latest study ({identifier} · {study_date})",
+        type=["pdf", "txt"],
+        key=f"latest_notes_{identifier}_{study_date}",
+        help="Attach notes for the latest study here. These can be reviewed alongside its MRI report and image.",
+    )
+    notes_valid = True
+    if notes_file:
+        try:
+            notes_text = read_report(notes_file)
+            if not notes_text:
+                raise ValueError("Empty notes")
+        except Exception:
+            notes_valid = False
+            st.error("Clinical notes could not be read. Upload a non-empty UTF-8 TXT or text-based PDF.")
+        else:
+            report = "\n\n".join(filter(None, (report, f"Clinical notes:\n{notes_text}")))
+            st.caption(f"Clinical notes included for {identifier} · {notes_file.name}")
+    if not report:
+        st.caption(f"Attach clinical notes here or written material under {identifier} to review documented diagnoses.")
     latest_report = {"study": identifier, "date": study_date, "text": report}
     applicable = request_questions(bank, report, image)
     use_images = bool(image and IMAGE_KEYS.intersection(applicable))
@@ -246,9 +266,10 @@ signature = (
          hashlib.sha256(image[1]).hexdigest() if image else None)
         for study_date, identifier, report, image in studies
     ),
+    hashlib.sha256(latest_report["text"].encode()).hexdigest() if latest else None,
     json.dumps(bank),
 )
-ready = bool(latest and applicable)
+ready = bool(latest and notes_valid and applicable)
 if not ready or st.session_state.get("signature") != signature:
     for key in ("signature", "answers", "summary"):
         st.session_state.pop(key, None)
@@ -277,7 +298,7 @@ if st.session_state.get("signature") == signature:
     for key, item in bank.items():
         answer = answers.get(key)
         if key not in applicable:
-            shown = "Latest study image required" if item["image"] else "Latest written report required"
+            shown = "Latest study image required" if item["image"] else "Latest clinical notes or written report required"
         elif item["definition"]["type"] == "box":
             shown = "Image annotation available" if answer else "No box returned"
         else:
