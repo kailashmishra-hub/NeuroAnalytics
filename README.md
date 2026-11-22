@@ -1,6 +1,6 @@
 # NeuroAnalytics
 
-Streamlit workspace for reviewing one child's MRI studies across dates. TypeSafe AI JEV reads the full set of written reports in one request and uses earlier reports as context to answer the selected questions about the latest study and OpenAI prepares a separate draft for clinician review from the dated JEV results.
+Streamlit workspace for reviewing one child's MRI studies across dates. TypeSafe AI JEV uses the uploaded MRI images and latest-study clinical notes to answer the selected questions about the latest study and OpenAI prepares a separate draft for clinician review from the dated JEV results.
 
 ## Run locally
 
@@ -14,7 +14,7 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python -m streamlit run app.py --server.address 127.0.0.1
 ```
 
-1. Enter each study date and attach de-identified written material or an annotated MRI figure. Written material can be a text-based PDF or UTF-8 TXT file. For scanned PDFs, verify the OCR text before uploading it as TXT.
+1. Enter each study date and attach a de-identified MRI image. After the latest study is selected, use its dedicated clinical notes upload for a text-based PDF or UTF-8 TXT file.
 2. Review the seven questions from `AnalyzeDecision.py`. Four require the upper-row Panel B figure referenced by their prompts. The three diagnosis-status questions use the written material. Remove questions, add custom written-report questions with answer choices, or restore the original bank.
 3. Run JEV to view answers and image annotations for the latest study. The app selects the newest study date and asks you to choose the latest study if dates tie. When an image question is active and the latest MRI image is available, JEV receives earlier MRI images as dated comparison references. Results and image annotations refer to the latest study. Review the results before generating the OpenAI draft.
 

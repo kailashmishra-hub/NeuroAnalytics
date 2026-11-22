@@ -124,7 +124,7 @@ st.caption("Use de-identified material approved for external processing. Review 
 left, right = st.columns([1, 1], gap="large")
 with left:
     st.header("Studies")
-    st.info("Enter the MRI study date for each report. The newest date determines the primary study for review. Earlier reports and images provide comparison context. You can upload them in any order.")
+    st.info("Enter the date for each MRI image. The newest date determines the primary study for review. Earlier images provide comparison context. You can upload them in any order.")
     count = st.number_input("Number of studies", min_value=1, max_value=20, value=1)
     studies = []
     report_names = {}
@@ -133,22 +133,17 @@ with left:
         identifier = f"R{index + 1}"
         with st.expander(f"Study {index + 1} · {identifier}", expanded=index == 0):
             study_date = st.date_input("Study date", value=None, max_value=date.today(), key=f"date_{index}")
-            file = st.file_uploader("Written MRI report or clinical notes", type=["pdf", "txt"], key=f"report_{index}")
             panel = st.file_uploader("MRI image (upper-row Panel B required for latest-study image questions)", type=["png", "jpg", "jpeg"], key=f"image_{index}")
-            report_text = ""
             image = None
             try:
-                report_text = read_report(file)
-                if file and not report_text:
-                    raise ValueError("Empty report")
                 if panel:
                     image = normalize_mri_image(panel.getvalue())
             except Exception:
                 valid_studies = False
-                st.error("Check the uploaded file. Scanned reports need verified OCR text in a TXT file.")
-            if study_date and (report_text or image):
-                report_names[identifier] = file.name if file else panel.name
-                studies.append((study_date.isoformat(), identifier, report_text, image))
+                st.error("Upload a readable MRI image in PNG or JPEG format.")
+            if study_date and image:
+                report_names[identifier] = panel.name
+                studies.append((study_date.isoformat(), identifier, image))
 
 with right:
     st.header("Question bank")
@@ -211,7 +206,8 @@ prior_reports = []
 use_images = False
 image = None
 if latest:
-    study_date, identifier, report, image = latest
+    study_date, identifier, image = latest
+    report = ""
     notes_file = st.file_uploader(
         f"Clinical notes for latest study ({identifier} · {study_date})",
         type=["pdf", "txt"],
@@ -231,14 +227,14 @@ if latest:
             report = "\n\n".join(filter(None, (report, f"Clinical notes:\n{notes_text}")))
             st.caption(f"Clinical notes included for {identifier} · {notes_file.name}")
     if not report:
-        st.caption(f"Attach clinical notes here or written material under {identifier} to review documented diagnoses.")
+        st.caption(f"Attach clinical notes here to review documented diagnoses.")
     latest_report = {"study": identifier, "date": study_date, "text": report}
     applicable = request_questions(bank, report, image)
     use_images = bool(image and IMAGE_KEYS.intersection(applicable))
     prior_reports = [
-        {"study": prior_id, "date": prior_date, "text": prior_text, "image": prior_image}
-        for prior_date, prior_id, prior_text, prior_image in studies
-        if prior_id != identifier and (prior_text or (use_images and prior_image))
+        {"study": prior_id, "date": prior_date, "image": prior_image}
+        for prior_date, prior_id, prior_image in studies
+        if prior_id != identifier and use_images
     ]
     st.subheader("Studies included in review")
     st.table([
@@ -246,25 +242,19 @@ if latest:
         for day, study_id, role in [
             (study_date, identifier, "Latest study · evaluate"),
             *[
-                (study["date"], study["study"], "Reference · " + " and ".join(
-                    source for source, included in (
-                        ("written report", bool(study["text"])),
-                        ("MRI image", bool(use_images and study["image"])),
-                    ) if included
-                ))
+                (study["date"], study["study"], "Reference · MRI image")
                 for study in prior_reports
             ],
         ]
     ])
-    if not use_images and any(prior_image for _, prior_id, _, prior_image in studies if prior_id != identifier):
+    if not use_images and any(prior_image for _, prior_id, prior_image in studies if prior_id != identifier):
         st.caption("To compare earlier images, attach the latest MRI image and keep an image question active.")
 
 signature = (
     latest[1] if latest else None,
     tuple(
-        (study_date, identifier, hashlib.sha256(report.encode()).hexdigest(),
-         hashlib.sha256(image[1]).hexdigest() if image else None)
-        for study_date, identifier, report, image in studies
+        (study_date, identifier, hashlib.sha256(image[1]).hexdigest() if image else None)
+        for study_date, identifier, image in studies
     ),
     hashlib.sha256(latest_report["text"].encode()).hexdigest() if latest else None,
     json.dumps(bank),
@@ -278,7 +268,7 @@ send_to_jev = st.checkbox("I authorize external processing of the selected repor
 if not os.getenv("TYPESAFE_API_KEY"):
     st.caption("AI-assisted radiology review is unavailable. Contact your application administrator to enable it.")
 if not ready:
-    st.caption("Enter a date and attach source material for each study. Keep at least one question that matches the latest study.")
+    st.caption("Enter a date and attach an MRI image for each study. Keep at least one question that matches the latest study.")
 if st.button("Run AI-assisted review", type="primary", disabled=not (ready and send_to_jev and os.getenv("TYPESAFE_API_KEY"))):
     with st.spinner("Reading the reports and reviewing the latest study…"):
         try:
@@ -293,7 +283,7 @@ if st.button("Run AI-assisted review", type="primary", disabled=not (ready and s
 
 if st.session_state.get("signature") == signature:
     answers = st.session_state.answers
-    study_date, identifier, _, image = latest
+    study_date, identifier, image = latest
     rows = []
     for key, item in bank.items():
         answer = answers.get(key)

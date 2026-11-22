@@ -20,6 +20,13 @@ def normalize_mri_image(data):
             raise ValueError("Expected a PNG or JPEG MRI image")
         rgb = source.convert("RGB")
         rgb.info.clear()
+        # Fit the model's image limits without stretching anatomy or clipping the figure.
+        rgb.thumbnail((1568, 1568), Image.Resampling.LANCZOS)
+        width, height = rgb.size
+        if min(width, height) < 280:
+            padded = Image.new("RGB", (max(280, width), max(280, height)))
+            padded.paste(rgb, ((padded.width - width) // 2, (padded.height - height) // 2))
+            rgb = padded
         with BytesIO() as buffer:
             rgb.save(buffer, format="PNG")
             return "png", buffer.getvalue()
