@@ -21,6 +21,8 @@ def ask_jev(latest_report, prior_reports, questions, image=None):
         "Authorization": f"Bearer {os.environ['TYPESAFE_API_KEY']}",
         "Content-Type": "application/json",
     }
+    if prior_reports:
+        headers["TypeSafe-Danger-Zone-Long-Context"] = "true"
     if image:
         image_format, data = image
         payload["state"]["document_image"] = "study-image"
@@ -57,7 +59,26 @@ def ask_jev(latest_report, prior_reports, questions, image=None):
                         raise ValueError("Unexpected box")
                 answers[key] = box
     except HTTPError as error:
-        raise JEVError(f"TypeSafe returned HTTP {error.code}.") from None
+        message = f"TypeSafe returned HTTP {error.code}."
+        with error:
+            if error.code in (400, 413, 422):
+                # Provider errors can echo report text, so show fixed guidance only.
+                detail = error.read(8192).decode("utf-8", errors="replace").casefold()
+                if "model" in detail and any(
+                    term in detail for term in ("vision", "box", "image", "multimodal")
+                ):
+                    message += " Check that TYPESAFE_MODEL supports image and box questions for your account."
+                elif "model" in detail:
+                    message += " Check TYPESAFE_MODEL against the models available to your TypeSafe account."
+                elif error.code == 413 or any(
+                    term in detail for term in ("context", "token limit", "too long", "too large")
+                ):
+                    message += " TypeSafe may have reached a request size limit. Test with a shorter de-identified report set."
+                elif "image" in detail or "asset" in detail:
+                    message += " Check that the latest study image is a valid PNG or JPEG."
+                else:
+                    message += " Test with one de-identified report and a written question to isolate the rejected input."
+        raise JEVError(message) from None
     except (TimeoutError, URLError):
         raise JEVError("Could not reach TypeSafe or the request timed out.") from None
     except (ValueError, KeyError, TypeError, AttributeError):
